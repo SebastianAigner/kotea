@@ -1,33 +1,115 @@
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
+@file:OptIn(ExperimentalMaterialApi::class)
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import org.jetbrains.compose.resources.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.room.RoomDatabase
+import androidx.room.util.TableInfo
+import kotlinx.coroutines.launch
+import mydatabase.AppDatabase
+import mydatabase.Person
+import mydatabase.TodoEntity
+import mydatabase.getRoomDatabase
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
-import kotea.composeapp.generated.resources.Res
-import kotea.composeapp.generated.resources.compose_multiplatform
-
+@OptIn(ExperimentalMaterialApi::class, ExperimentalLayoutApi::class)
 @Composable
 @Preview
-fun App() {
+fun App(databaseBuilder: RoomDatabase.Builder<AppDatabase>) {
+    val database = remember { databaseBuilder.getRoomDatabase() }
+    val dao = remember(database) { database.getDao() }
+
+    val peopleWithTodos by dao.getPeopleWithTodos().collectAsState(emptyList())
+
+    val scope = rememberCoroutineScope()
+    var selectedPerson by remember { mutableStateOf<Person?>(null) }
+
     MaterialTheme {
-        var showContent by remember { mutableStateOf(false) }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Button(onClick = { showContent = !showContent }) {
-                Text("Click me!")
+            var isDropdownExpanded by remember { mutableStateOf(false) }
+
+            ExposedDropdownMenuBox(
+                expanded = isDropdownExpanded,
+                onExpandedChange = { isDropdownExpanded = it },
+            ) {
+                DropdownMenuItem({}) {
+                    Text(
+                        text = selectedPerson?.name ?: "[ No selection ]",
+                        modifier = Modifier.weight(1f),
+                    )
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded)
+                }
+
+                ExposedDropdownMenu(
+                    expanded = isDropdownExpanded,
+                    onDismissRequest = { isDropdownExpanded = false },
+                ) {
+                    peopleWithTodos.forEach { personWithTodos ->
+                        DropdownMenuItem(onClick = {
+                            selectedPerson = personWithTodos.person
+                            isDropdownExpanded = false
+                        }) {
+                            Text(text = personWithTodos.person.name)
+                        }
+                    }
+                }
             }
-            AnimatedVisibility(showContent) {
-                val greeting = remember { Greeting().greet() }
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    Text("Compose: $greeting")
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    scope.launch { dao.initUsers() }
+                }) {
+                    Text("Init people")
+                }
+                Button(onClick = {
+                    scope.launch { dao.deleteAllPeople() }
+                }) {
+                    Text("Remove people")
+                }
+                Button(onClick = {
+                    scope.launch {
+                        dao.insert(
+                            TodoEntity(
+                                title = "I'm a todo",
+                                content = "You complete me",
+                                personId = selectedPerson?.id ?: 0L,
+                            )
+                        )
+                    }
+                }) {
+                    Text("Insert")
+                }
+                Button(onClick = {
+                    scope.launch {
+                        selectedPerson?.id?.let {
+                            dao.deleteAllTodosForUserId(it)
+                        }
+                    }
+                }) {
+                    Text("Delete todos for ${selectedPerson?.name}")
+                }
+                Button(onClick = {
+                    scope.launch {
+                        dao.deleteAll()
+                    }
+                }) {
+                    Text("Delete all")
+                }
+            }
+
+            for (value in peopleWithTodos) {
+                key(value.person.id) {
+                    Text(value.person.name, style = MaterialTheme.typography.h5)
+                    Column {
+                        value.todos.forEach {
+                            key(it.id) {
+                                Text("(${it.id}) ${it.title} - ${it.content}")
+                            }
+                        }
+                    }
                 }
             }
         }

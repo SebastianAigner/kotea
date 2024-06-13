@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -16,9 +17,9 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_11)
         }
     }
-    
+
     jvm("desktop")
-    
+
     listOf(
         iosX64(),
         iosArm64(),
@@ -29,26 +30,40 @@ kotlin {
             isStatic = true
         }
     }
-    
+
     sourceSets {
         val desktopMain by getting
-        
+
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
         }
-        commonMain.dependencies {
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material)
-            implementation(compose.ui)
-            implementation(compose.components.resources)
-            implementation(compose.components.uiToolingPreview)
+        commonMain {
+            kotlin.srcDir("build/generated/ksp/metadata")
+            dependencies {
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material)
+                implementation(compose.ui)
+                implementation(compose.components.resources)
+                implementation(compose.components.uiToolingPreview)
+
+                implementation(libs.room.runtime)
+                implementation(libs.sqlite.bundled)
+            }
+        }
+        commonTest.dependencies {
+            implementation(libs.room.testing)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
         }
     }
+}
+
+dependencies {
+    implementation(project(":composeApp"))
+    add("kspCommonMainMetadata", libs.room.compiler)
 }
 
 android {
@@ -97,5 +112,11 @@ compose.desktop {
             packageName = "com.jetbrains.kotea"
             packageVersion = "1.0.0"
         }
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.dsl.KotlinCompile<*>>().configureEach {
+    if (name != "kspCommonMainKotlinMetadata") {
+        dependsOn("kspCommonMainKotlinMetadata")
     }
 }
